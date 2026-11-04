@@ -73,7 +73,7 @@ async function login(e){e.preventDefault();const email=document.getElementById("
 }
 async function logout(){if(db.online){await sb.auth.signOut({scope:"local"});return}db.session=null;saveLocal();state={page:"dashboard",search:"",selected:null,editing:null,filters:{}};layout()}
 function go(p){if(p==="admin"&&!isAdmin()){toast("Accès administrateur requis.");return}state.page=p;state.selected=null;state.editing=null;renderPage();window.scrollTo({top:0,behavior:"smooth"})}
-function renderPage(){const el=document.getElementById("main");if(!el)return;if(state.page==="dashboard")el.innerHTML=dashboard();else if(state.page==="parcels")el.innerHTML=parcels();else if(state.page==="search")el.innerHTML=parcels(true);else if(state.page==="new")el.innerHTML=parcelForm();else if(state.page==="fiche"){el.innerHTML=fiche(state.selected);const raw=db.parcels.find(x=>x.id===state.selected);if(raw){const p=normalizeParcel(raw);makeQR("qrFiche",parcelPayload(p));}}else if(state.page==="admin"){el.innerHTML=admin();if(db.online&&isAdmin())loadOnlineUsers()}else el.innerHTML=dashboard()}
+function renderPage(){const el=document.getElementById("main");if(!el)return;if(state.page==="dashboard")el.innerHTML=dashboard();else if(state.page==="parcels")el.innerHTML=parcels();else if(state.page==="search")el.innerHTML=parcels(true);else if(state.page==="new")el.innerHTML=parcelForm();else if(state.page==="fiche")el.innerHTML=fiche(state.selected);else if(state.page==="admin"){el.innerHTML=admin();if(db.online&&isAdmin())loadOnlineUsers()}else el.innerHTML=dashboard()}
 
 function dashboard(){
  const total=db.parcels.length,active=db.parcels.filter(p=>canonicalStatus(p.status)!=="Livré").length,delivered=db.parcels.filter(p=>canonicalStatus(p.status)==="Livré").length,revenue=db.parcels.reduce((s,p)=>s+Number(p.total||0),0);
@@ -147,12 +147,61 @@ function fiche(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return '<div 
  return `<div class="page-head"><div><div class="eyebrow">SUIVI COLIS</div><h2>Fiche colis</h2><p><span class="parcel-id">${esc(p.id)}</span> · reçu le ${dateFmt(p.date)}</p></div><div class="actions">${canEdit?`<button class="btn btn-secondary" onclick="editParcel('${esc(p.id)}')">Modifier</button>`:''}<button class="btn btn-secondary" onclick="printLabel('${esc(p.id)}')">Imprimer étiquette</button>${isAdmin()?`<button class="btn btn-danger" onclick="deleteParcel('${esc(p.id)}')">Supprimer</button>`:''}</div></div>
  <div class="fiche"><section class="card"><div class="section-head"><h3>Informations du colis</h3>${badge(p.status)}</div><div class="detail-grid">${[["Client",p.client],["TEL client",p.tel],["Date réception",dateFmt(p.date)],["Provenance",p.origin],["Destination",p.destination],["Destinataire",p.destinataire],["TEL destinataire",p.telDest],["Quantité",p.qty],["Type colis",p.type],["Poids",p.weight+' kg'],["Prix/kg",money(p.price)],["Prix total",money(p.total)],["Valeur déclarée",money(p.declared)],["Créé par",p.createdBy]].map(x=>`<div class="detail"><div class="k">${x[0]}</div><div class="v">${esc(x[1]||'—')}</div></div>`).join('')}</div><div class="notes-box"><div class="muted">Notes</div><div>${esc(p.notes||'Aucune note.')}</div></div></section>
  <aside class="card"><h3>QR Code</h3><div id="qrFiche" class="qr-box"></div><p class="note">Le QR contient : nom, numéro, provenance, destination, prix total et poids.</p><div class="status-control"><label class="muted">Statut actuel</label><div style="margin:7px 0 14px">${badge(p.status)}</div>${canEdit?`<select onchange="changeStatus('${esc(p.id)}',this.value)">${STATUSES.map(s=>`<option ${p.status===s?'selected':''}>${esc(s)}</option>`).join('')}</select>`:''}</div></aside></div>
- <section class="card" style="margin-top:18px"><div class="section-head"><h3>Historique des étapes</h3></div><div class="timeline">${STATUSES.map(s=>`<div class="timeline-row"><div class="dot ${p.status===s?'current':''}"></div><div><b>${esc(s)}</b>${p.status===s?'<div class="muted timeline-current">Statut actuel</div>':''}</div></div>`).join('')}</div></section>`;
+ <section class="card" style="margin-top:18px"><div class="section-head"><h3>Historique des étapes</h3></div><div class="timeline">${STATUSES.map(s=>`<div class="timeline-row"><div class="dot ${p.status===s?'current':''}"></div><div><b>${esc(s)}</b>${p.status===s?'<div class="muted timeline-current">Statut actuel</div>':''}</div></div>`).join('')}</div></section><script>setTimeout(()=>makeQR('qrFiche',parcelPayload(${JSON.stringify(p)})),30)</script>`;
 }
 function parcelPayload(p){return `GVI INTERNATIONAL\nNom: ${p.client||''}\nNumero: ${p.tel||''}\nProvenance: ${p.origin||''}\nDestination: ${p.destination||''}\nPrix: ${Number(p.total||0).toFixed(2)} DH\nPoids: ${Number(p.weight||0).toFixed(2)} kg`}
-function makeQR(id,data){const el=document.getElementById(id);if(!el)return;el.innerHTML='';if(!window.QRCode){el.innerHTML='<span class="note">QR Code indisponible : vérifiez votre connexion Internet puis rechargez la page.</span>';console.error('Bibliothèque QRCode non chargée.');return;}try{new QRCode(el,{text:String(data||''),width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}catch(err){console.error('Erreur génération QR Code:',err);el.innerHTML='<span class="note">Impossible de générer le QR Code.</span>';}}
-function labelHTML(p){return `<div class="label-print"><img src="${LOGO_SRC}" class="label-logo"><div class="label-brand">GVI INTERNATIONAL</div><div class="label-id">${esc(p.id)}</div><div class="label-row"><b>Nom :</b> ${esc(p.client)}</div><div class="label-row"><b>N° :</b> ${esc(p.tel||'—')}</div><div class="label-row"><b>Provenance :</b> ${esc(p.origin||'—')}</div><div class="label-row"><b>Destination :</b> ${esc(p.destination)}</div><div class="label-row"><b>Prix :</b> ${money(p.total)}</div><div class="label-row"><b>Poids :</b> ${esc(p.weight)} kg</div><div class="label-row"><b>Statut :</b> ${esc(p.status)}</div><div class="label-qr"><div id="printQR"></div></div></div>`}
-function printLabel(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return;const p=normalizeParcel(raw),w=window.open('','_blank','width=500,height=700');if(!w)return;w.document.write(`<html><head><title>Étiquette ${esc(p.id)}</title><style>body{margin:0;font-family:Arial}.label-print{width:90mm;padding:8mm}.label-print img{width:38mm;display:block;margin:auto}.label-brand{text-align:center;font-weight:800;margin:2mm}.label-id{font-size:22px;font-weight:900;text-align:center}.label-row{font-size:11px;margin:3px 0}.label-qr{display:flex;justify-content:center;margin:6mm 0}</style></head><body>${labelHTML(p)}<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script><script>new QRCode(document.getElementById('printQR'),{text:${JSON.stringify(parcelPayload(p))},width:220,height:220});setTimeout(()=>window.print(),500)<\/script></body></html>`);w.document.close()}
+function makeQR(id,data){const el=document.getElementById(id);if(!el||!window.QRCode)return;el.innerHTML='';new QRCode(el,{text:data,width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M})}
+function labelHTML(p, qrDataUrl){
+ return `<div class="label-print">
+   <img src="${LOGO_SRC}" class="label-logo" alt="GVI">
+   <div class="label-brand">GVI INTERNATIONAL</div>
+   <div class="label-qr"><img class="label-qr-image" src="${qrDataUrl}" alt="QR Code client"></div>
+   <div class="label-hint">Scanner le QR Code pour consulter les informations du client</div>
+ </div>`;
+}
+function printLabel(id){
+ const raw=db.parcels.find(x=>x.id===id);
+ if(!raw)return;
+ const p=normalizeParcel(raw);
+ if(typeof window.QRCode!=='function'){
+   toast('QR Code indisponible. Vérifiez votre connexion Internet puis réessayez.');
+   return;
+ }
+ // Générer le QR dans la page principale, où la bibliothèque est déjà chargée.
+ const holder=document.createElement('div');
+ holder.style.cssText='position:fixed;left:-10000px;top:-10000px;width:220px;height:220px';
+ document.body.appendChild(holder);
+ try{
+   new QRCode(holder,{text:parcelPayload(p),width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+   const canvas=holder.querySelector('canvas');
+   const image=holder.querySelector('img');
+   const qrDataUrl=canvas?canvas.toDataURL('image/png'):(image?image.src:'');
+   if(!qrDataUrl){toast('Le QR Code n’a pas pu être généré. Réessayez.');return;}
+   const w=window.open('','_blank','width=500,height=700');
+   if(!w){toast('Autorisez les fenêtres pop-up pour imprimer l’étiquette.');return;}
+   w.document.open();
+   w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Étiquette GVI</title>
+   <style>
+   *{box-sizing:border-box}body{margin:0;background:#fff;font-family:Arial,sans-serif;color:#111}
+   .label-print{width:90mm;min-height:90mm;padding:7mm;margin:0 auto;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
+   .label-logo{width:38mm;height:auto;display:block;margin:0 auto 4mm}
+   .label-brand{font-size:16px;font-weight:800;letter-spacing:.5px;margin-bottom:5mm}
+   .label-qr{display:flex;justify-content:center;align-items:center;width:100%;margin:0}
+   .label-qr-image{width:48mm;height:48mm;display:block;image-rendering:pixelated}
+   .label-hint{font-size:9px;margin-top:4mm;max-width:70mm;line-height:1.4}
+   @page{size:100mm 100mm;margin:0}
+   @media print{body{width:100mm}.label-print{width:100mm;min-height:100mm}}
+   </style></head><body>${labelHTML(p,qrDataUrl)}
+   <script>window.onload=()=>{const q=document.querySelector('.label-qr-image');if(q.complete){setTimeout(()=>window.print(),250)}else{q.onload=()=>setTimeout(()=>window.print(),250)}};<\/script>
+   </body></html>`);
+   w.document.close();
+ }catch(err){
+   console.error('Erreur génération QR',err);
+   toast('Erreur lors de la génération du QR Code.');
+ }finally{
+   setTimeout(()=>holder.remove(),1000);
+ }
+}
 
 function admin(){if(!isAdmin())return '<div class="empty">Accès administrateur requis.</div>';return `<div class="page-head"><div><div class="eyebrow">ADMINISTRATION</div><h2>Administration</h2><p>Utilisateurs, tarifs et maintenance de la plateforme.</p></div></div><div class="two-col"><section class="card"><div class="section-head"><h3>Utilisateurs</h3><span class="mode-pill ${db.online?'online':'local'}">${db.online?'Comptes Supabase':'Comptes locaux'}</span></div>${db.online?`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un utilisateur</button><button class="btn btn-secondary" onclick="loadOnlineUsers()">↻ Actualiser</button></div><div id="usersAdminList"><div class="empty">Chargement des utilisateurs…</div></div>`:`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un collaborateur</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'Administrateur':'Collaborateur'}</td><td>${u.id!=='u-admin'?`<button class="btn btn-danger" onclick="deleteUser('${esc(u.id)}')">Supprimer</button>`:'Compte principal'}</td></tr>`).join('')}</tbody></table></div>`}</section>
  <section class="card"><div class="section-head"><h3>Tarifs par destination</h3><button class="btn btn-primary" onclick="addTariff()">＋ Ajouter</button></div><div class="mini-list">${db.tariffs.map((t,i)=>`<div class="mini-item"><span><b>${esc(t.destination)}</b><br><small class="muted">${money(t.price)}/kg</small></span><button class="btn btn-danger" onclick="deleteTariff('${esc(t.id??i)}',${i})">Supprimer</button></div>`).join('')||'<div class="empty">Aucun tarif.</div>'}</div></section></div>
