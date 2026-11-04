@@ -161,45 +161,49 @@ function labelHTML(p, qrDataUrl){
 }
 function printLabel(id){
  const raw=db.parcels.find(x=>x.id===id);
- if(!raw)return;
+ if(!raw){toast('Colis introuvable.');return;}
  const p=normalizeParcel(raw);
- if(typeof window.QRCode!=='function'){
-   toast('QR Code indisponible. Vérifiez votre connexion Internet puis réessayez.');
+ const QR=window.QRCode;
+ if(typeof QR!=='function'){
+   toast('La bibliothèque QR Code ne se charge pas. Rechargez la page puis réessayez.');
+   console.error('GVI: window.QRCode absent. Vérifier le chargement de qrcodejs.');
    return;
  }
- // Générer le QR dans la page principale, où la bibliothèque est déjà chargée.
  const holder=document.createElement('div');
- holder.style.cssText='position:fixed;left:-10000px;top:-10000px;width:220px;height:220px';
+ holder.style.cssText='position:fixed;left:-10000px;top:-10000px;width:240px;height:240px';
  document.body.appendChild(holder);
+ let popup=null;
  try{
-   new QRCode(holder,{text:parcelPayload(p),width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+   const options={text:parcelPayload(p),width:240,height:240,colorDark:'#000000',colorLight:'#ffffff'};
+   if(QR.CorrectLevel && QR.CorrectLevel.M!==undefined) options.correctLevel=QR.CorrectLevel.M;
+   else options.correctLevel=0;
+   new QR(holder,options);
    const canvas=holder.querySelector('canvas');
    const image=holder.querySelector('img');
-   const qrDataUrl=canvas?canvas.toDataURL('image/png'):(image?image.src:'');
-   if(!qrDataUrl){toast('Le QR Code n’a pas pu être généré. Réessayez.');return;}
-   const w=window.open('','_blank','width=500,height=700');
-   if(!w){toast('Autorisez les fenêtres pop-up pour imprimer l’étiquette.');return;}
-   w.document.open();
-   w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Étiquette GVI</title>
-   <style>
-   *{box-sizing:border-box}body{margin:0;background:#fff;font-family:Arial,sans-serif;color:#111}
-   .label-print{width:90mm;min-height:90mm;padding:7mm;margin:0 auto;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
-   .label-logo{width:38mm;height:auto;display:block;margin:0 auto 4mm}
-   .label-brand{font-size:16px;font-weight:800;letter-spacing:.5px;margin-bottom:5mm}
-   .label-qr{display:flex;justify-content:center;align-items:center;width:100%;margin:0}
-   .label-qr-image{width:48mm;height:48mm;display:block;image-rendering:pixelated}
-   .label-hint{font-size:9px;margin-top:4mm;max-width:70mm;line-height:1.4}
-   @page{size:100mm 100mm;margin:0}
-   @media print{body{width:100mm}.label-print{width:100mm;min-height:100mm}}
-   </style></head><body>${labelHTML(p,qrDataUrl)}
-   <script>window.onload=()=>{const q=document.querySelector('.label-qr-image');if(q.complete){setTimeout(()=>window.print(),250)}else{q.onload=()=>setTimeout(()=>window.print(),250)}};<\/script>
-   </body></html>`);
-   w.document.close();
+   let qrDataUrl='';
+   if(canvas){qrDataUrl=canvas.toDataURL('image/png');}
+   else if(image){qrDataUrl=image.src;}
+   if(!qrDataUrl){
+     holder.remove();
+     toast('La bibliothèque QR Code est chargée, mais elle ne produit aucune image.');
+     console.error('GVI: aucun canvas ni image généré par QRCode.',holder.innerHTML);
+     return;
+   }
+   popup=window.open('','_blank','width=500,height=700');
+   if(!popup){toast('Autorisez les fenêtres pop-up pour imprimer l’étiquette.');return;}
+   const logo=LOGO_SRC || '';
+   popup.document.open();
+   popup.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Étiquette GVI</title>
+   <style>*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#111;font-family:Arial,sans-serif}.label-print{width:100mm;min-height:100mm;padding:7mm;margin:0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}.label-logo{width:38mm;max-height:24mm;object-fit:contain;margin:0 auto 4mm}.label-brand{font-size:16px;font-weight:800;letter-spacing:.4px;margin-bottom:5mm}.label-qr-image{width:55mm;height:55mm;display:block;image-rendering:pixelated}.label-hint{font-size:9px;margin-top:4mm;max-width:75mm;line-height:1.4}@page{size:100mm 100mm;margin:0}@media print{body{width:100mm}}</style></head><body>
+   <main class="label-print"><img class="label-logo" src="${logo}" alt="GVI"><div class="label-brand">GVI INTERNATIONAL</div><img class="label-qr-image" src="${qrDataUrl}" alt="QR Code client"><div class="label-hint">Scanner le QR Code pour consulter les informations du client</div></main>
+   <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));<\/script></body></html>`);
+   popup.document.close();
  }catch(err){
-   console.error('Erreur génération QR',err);
-   toast('Erreur lors de la génération du QR Code.');
+   console.error('GVI - erreur génération/impression QR:',err);
+   toast('Erreur QR Code : '+(err && err.message ? err.message : 'consultez la console du navigateur.'));
+   if(popup && !popup.closed) popup.close();
  }finally{
-   setTimeout(()=>holder.remove(),1000);
+   setTimeout(()=>{if(holder.isConnected)holder.remove();},1500);
  }
 }
 
