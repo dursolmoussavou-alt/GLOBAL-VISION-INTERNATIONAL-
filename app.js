@@ -170,7 +170,7 @@ function printLabel(id){
     if(!window.QRCode)throw new Error('Bibliothèque QRCode non chargée (vérifiez votre connexion Internet).');
     new QRCode(holder,{text:parcelPayload(p),width:600,height:600,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
     const c=holder.querySelector('canvas'),im=holder.querySelector('img');
-    if(c){if(im)im.remove();ok=true;}
+    if(c){if(im)im.remove();c.style.setProperty('display','block','important');ok=true;}
     else if(holder.querySelector('table')||(im&&im.getAttribute('src')))ok=true;
   }catch(err){errMsg=err&&err.message?err.message:String(err);console.error('Erreur génération QR Code (impression):',err);}
   /* 2) Secours : reprendre le QR déjà affiché sur la fiche */
@@ -188,21 +188,21 @@ function printLabel(id){
   const st=document.createElement('style');
   st.id='gviQrPrintStyle';
   st.textContent='#gviQrPrint{display:none}'
-    +'@media print{'
     +'@page{margin:0}'
+    +'@media print{'
     +'html,body{margin:0!important;padding:0!important;background:#fff!important;height:100%!important}'
     +'body>*:not(#gviQrPrint){display:none!important}'
-    +'#gviQrPrint{display:flex!important;position:fixed;inset:0;flex-direction:column;align-items:center;justify-content:center;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;z-index:2147483647}'
+    +'#gviQrPrint{display:flex!important;position:fixed;top:0;left:0;right:0;bottom:0;flex-direction:column;align-items:center;justify-content:center;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;z-index:2147483647}'
     +'#gviQrPrint .gvi-brand{font-size:22px;font-weight:800;letter-spacing:.08em;margin-bottom:10mm;text-align:center}'
     +'#gviQrPrint .gvi-qr{display:flex;justify-content:center;width:100%}'
-    +'#gviQrPrint .gvi-qr canvas,#gviQrPrint .gvi-qr img{display:block!important;width:100mm!important;max-width:80%!important;height:auto!important}'
+    +'#gviQrPrint .gvi-qr canvas,#gviQrPrint .gvi-qr img{display:block!important;width:100mm!important;max-width:80%!important;height:auto!important;image-rendering:pixelated}'
     +'}';
   document.head.appendChild(st);
   const cleanup=()=>{window.removeEventListener('afterprint',cleanup);st.remove();layer.remove();};
   window.addEventListener('afterprint',cleanup);
   setTimeout(cleanup,120000);
   const img=holder.querySelector('img');
-  const go=()=>setTimeout(()=>{try{window.print();}catch(e){console.error('Erreur impression:',e);cleanup();}},200);
+  const go=()=>{try{window.print();}catch(e){console.error('Erreur impression:',e);cleanup();}};
   if(!img||img.complete)go();else img.onload=go;
 }
 
