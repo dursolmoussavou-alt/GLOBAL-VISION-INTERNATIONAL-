@@ -152,45 +152,7 @@ function fiche(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return '<div 
 function parcelPayload(p){return `GVI INTERNATIONAL\nNom: ${p.client||''}\nNumero: ${p.tel||''}\nProvenance: ${p.origin||''}\nDestination: ${p.destination||''}\nPrix: ${Number(p.total||0).toFixed(2)} DH\nPoids: ${Number(p.weight||0).toFixed(2)} kg`}
 function makeQR(id,data){const el=document.getElementById(id);if(!el)return;el.innerHTML='';if(!window.QRCode){el.innerHTML='<span class="note">QR Code indisponible : vérifiez votre connexion Internet puis rechargez la page.</span>';console.error('Bibliothèque QRCode non chargée.');return;}try{new QRCode(el,{text:String(data||''),width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}catch(err){console.error('Erreur génération QR Code:',err);el.innerHTML='<span class="note">Impossible de générer le QR Code.</span>';}}
 function labelHTML(p){return `<div class="label-print"><img src="${LOGO_SRC}" class="label-logo"><div class="label-brand">GVI INTERNATIONAL</div><div class="label-id">${esc(p.id)}</div><div class="label-row"><b>Nom :</b> ${esc(p.client)}</div><div class="label-row"><b>N° :</b> ${esc(p.tel||'—')}</div><div class="label-row"><b>Provenance :</b> ${esc(p.origin||'—')}</div><div class="label-row"><b>Destination :</b> ${esc(p.destination)}</div><div class="label-row"><b>Prix :</b> ${money(p.total)}</div><div class="label-row"><b>Poids :</b> ${esc(p.weight)} kg</div><div class="label-row"><b>Statut :</b> ${esc(p.status)}</div><div class="label-qr"><div id="printQR"></div></div></div>`}
-function printLabel(id){
-  /* Impression : uniquement le QR code du client, centré sur une page blanche (avec le nom GVI INTERNATIONAL).
-     L'impression se fait dans un iframe caché : l'application n'est jamais quittée ni modifiée. */
-  const raw=db.parcels.find(x=>x.id===id);if(!raw)return;
-  const p=normalizeParcel(raw);
-  if(!window.QRCode){alert('QR Code indisponible : vérifiez votre connexion Internet puis rechargez la page.');return;}
-  let qrSrc='';
-  try{
-    const tmp=document.createElement('div');
-    tmp.style.cssText='position:fixed;left:-9999px;top:0;';
-    document.body.appendChild(tmp);
-    new QRCode(tmp,{text:parcelPayload(p),width:600,height:600,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-    const c=tmp.querySelector('canvas'),im=tmp.querySelector('img');
-    qrSrc=c?c.toDataURL('image/png'):(im?im.src:'');
-    document.body.removeChild(tmp);
-  }catch(err){console.error('Erreur génération QR Code (impression):',err);}
-  if(!qrSrc){alert("Impossible de générer le QR Code à imprimer.");return;}
-  const html='<!doctype html><html><head><meta charset="utf-8"><title>GVI International</title><style>'
-    +'@page{margin:0}'
-    +'html,body{margin:0;padding:0;background:#fff;height:100%;overflow:hidden}'
-    +'body{display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-    +'.brand{font-size:22px;font-weight:800;letter-spacing:.08em;margin-bottom:10mm;text-align:center}'
-    +'img{width:100mm;max-width:80%;height:auto;display:block}'
-    +'</style></head><body><div class="brand">GVI INTERNATIONAL</div><img id="qr" alt="QR Code" src="'+qrSrc+'"></body></html>';
-  const f=document.createElement('iframe');
-  f.setAttribute('aria-hidden','true');
-  f.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;';
-  document.body.appendChild(f);
-  const cleanup=()=>{try{if(f.parentNode)f.parentNode.removeChild(f)}catch(e){}};
-  try{
-    const w=f.contentWindow,d=w.document;
-    d.open();d.write(html);d.close();
-    w.onafterprint=cleanup;
-    const im=d.getElementById('qr');
-    const go=()=>{try{w.focus();w.print();}catch(e){console.error('Erreur impression:',e);cleanup();}};
-    if(im.complete)setTimeout(go,150);else im.onload=()=>setTimeout(go,150);
-    setTimeout(cleanup,120000);
-  }catch(err){console.error('Erreur impression:',err);cleanup();}
-}
+function printLabel(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return;const p=normalizeParcel(raw),w=window.open('','_blank','width=500,height=700');if(!w)return;w.document.write(`<html><head><title>Étiquette ${esc(p.id)}</title><style>body{margin:0;font-family:Arial}.label-print{width:90mm;padding:8mm}.label-print img{width:38mm;display:block;margin:auto}.label-brand{text-align:center;font-weight:800;margin:2mm}.label-id{font-size:22px;font-weight:900;text-align:center}.label-row{font-size:11px;margin:3px 0}.label-qr{display:flex;justify-content:center;margin:6mm 0}</style></head><body>${labelHTML(p)}<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script><script>new QRCode(document.getElementById('printQR'),{text:${JSON.stringify(parcelPayload(p))},width:220,height:220});setTimeout(()=>window.print(),500)<\/script></body></html>`);w.document.close()}
 
 function admin(){if(!isAdmin())return '<div class="empty">Accès administrateur requis.</div>';return `<div class="page-head"><div><div class="eyebrow">ADMINISTRATION</div><h2>Administration</h2><p>Utilisateurs, tarifs et maintenance de la plateforme.</p></div></div><div class="two-col"><section class="card"><div class="section-head"><h3>Utilisateurs</h3><span class="mode-pill ${db.online?'online':'local'}">${db.online?'Comptes Supabase':'Comptes locaux'}</span></div>${db.online?`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un utilisateur</button><button class="btn btn-secondary" onclick="loadOnlineUsers()">↻ Actualiser</button></div><div id="usersAdminList"><div class="empty">Chargement des utilisateurs…</div></div>`:`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un collaborateur</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'Administrateur':'Collaborateur'}</td><td>${u.id!=='u-admin'?`<button class="btn btn-danger" onclick="deleteUser('${esc(u.id)}')">Supprimer</button>`:'Compte principal'}</td></tr>`).join('')}</tbody></table></div>`}</section>
  <section class="card"><div class="section-head"><h3>Tarifs par destination</h3><button class="btn btn-primary" onclick="addTariff()">＋ Ajouter</button></div><div class="mini-list">${db.tariffs.map((t,i)=>`<div class="mini-item"><span><b>${esc(t.destination)}</b><br><small class="muted">${money(t.price)}/kg</small></span><button class="btn btn-danger" onclick="deleteTariff('${esc(t.id??i)}',${i})">Supprimer</button></div>`).join('')||'<div class="empty">Aucun tarif.</div>'}</div></section></div>
