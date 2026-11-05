@@ -158,19 +158,33 @@ function printLabel(id){
      L'application n'est ni rechargée ni modifiée : les données restent intactes. */
   const raw=db.parcels.find(x=>x.id===id);if(!raw)return;
   const p=normalizeParcel(raw);
-  if(!window.QRCode){alert('QR Code indisponible : vérifiez votre connexion Internet puis rechargez la page.');return;}
   ['gviQrPrint','gviQrPrintStyle'].forEach(i=>{const o=document.getElementById(i);if(o)o.remove();});
-  let qrSrc='';
+  const layer=document.createElement('div');
+  layer.id='gviQrPrint';
+  layer.innerHTML='<div class="gvi-brand">GVI INTERNATIONAL</div><div class="gvi-qr"></div>';
+  const holder=layer.querySelector('.gvi-qr');
+  document.body.appendChild(layer);
+  let ok=false,errMsg='';
+  /* 1) QR généré directement dans la couche d'impression */
   try{
-    const tmp=document.createElement('div');
-    tmp.style.cssText='position:fixed;left:-9999px;top:0;';
-    document.body.appendChild(tmp);
-    new QRCode(tmp,{text:parcelPayload(p),width:600,height:600,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-    const c=tmp.querySelector('canvas'),im=tmp.querySelector('img');
-    qrSrc=c?c.toDataURL('image/png'):(im?im.src:'');
-    tmp.remove();
-  }catch(err){console.error('Erreur génération QR Code (impression):',err);}
-  if(!qrSrc){alert("Impossible de générer le QR Code à imprimer.");return;}
+    if(!window.QRCode)throw new Error('Bibliothèque QRCode non chargée (vérifiez votre connexion Internet).');
+    new QRCode(holder,{text:parcelPayload(p),width:600,height:600,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+    const c=holder.querySelector('canvas'),im=holder.querySelector('img');
+    if(c){if(im)im.remove();ok=true;}
+    else if(holder.querySelector('table')||(im&&im.getAttribute('src')))ok=true;
+  }catch(err){errMsg=err&&err.message?err.message:String(err);console.error('Erreur génération QR Code (impression):',err);}
+  /* 2) Secours : reprendre le QR déjà affiché sur la fiche */
+  if(!ok){
+    try{
+      const box=document.getElementById('qrFiche');
+      const c=box&&box.querySelector('canvas'),im=box&&box.querySelector('img');
+      let src='';
+      if(im&&im.getAttribute('src'))src=im.getAttribute('src');
+      else if(c)src=c.toDataURL('image/png');
+      if(src){holder.innerHTML='';const n=document.createElement('img');n.alt='QR Code';n.src=src;holder.appendChild(n);ok=true;}
+    }catch(err2){console.error('Erreur QR de secours:',err2);}
+  }
+  if(!ok){layer.remove();alert("Impossible de générer le QR Code à imprimer."+(errMsg?"\n\n"+errMsg:""));return;}
   const st=document.createElement('style');
   st.id='gviQrPrintStyle';
   st.textContent='#gviQrPrint{display:none}'
@@ -180,19 +194,16 @@ function printLabel(id){
     +'body>*:not(#gviQrPrint){display:none!important}'
     +'#gviQrPrint{display:flex!important;position:fixed;inset:0;flex-direction:column;align-items:center;justify-content:center;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;z-index:2147483647}'
     +'#gviQrPrint .gvi-brand{font-size:22px;font-weight:800;letter-spacing:.08em;margin-bottom:10mm;text-align:center}'
-    +'#gviQrPrint img{width:100mm;max-width:80%;height:auto;display:block}'
+    +'#gviQrPrint .gvi-qr{display:flex;justify-content:center;width:100%}'
+    +'#gviQrPrint .gvi-qr canvas,#gviQrPrint .gvi-qr img{display:block!important;width:100mm!important;max-width:80%!important;height:auto!important}'
     +'}';
-  const layer=document.createElement('div');
-  layer.id='gviQrPrint';
-  layer.innerHTML='<div class="gvi-brand">GVI INTERNATIONAL</div><img alt="QR Code" src="'+qrSrc+'">';
   document.head.appendChild(st);
-  document.body.appendChild(layer);
   const cleanup=()=>{window.removeEventListener('afterprint',cleanup);st.remove();layer.remove();};
   window.addEventListener('afterprint',cleanup);
   setTimeout(cleanup,120000);
-  const img=layer.querySelector('img');
-  const go=()=>setTimeout(()=>{try{window.print();}catch(e){console.error('Erreur impression:',e);cleanup();}},150);
-  if(img.complete)go();else img.onload=go;
+  const img=holder.querySelector('img');
+  const go=()=>setTimeout(()=>{try{window.print();}catch(e){console.error('Erreur impression:',e);cleanup();}},200);
+  if(!img||img.complete)go();else img.onload=go;
 }
 
 function admin(){if(!isAdmin())return '<div class="empty">Accès administrateur requis.</div>';return `<div class="page-head"><div><div class="eyebrow">ADMINISTRATION</div><h2>Administration</h2><p>Utilisateurs, tarifs et maintenance de la plateforme.</p></div></div><div class="two-col"><section class="card"><div class="section-head"><h3>Utilisateurs</h3><span class="mode-pill ${db.online?'online':'local'}">${db.online?'Comptes Supabase':'Comptes locaux'}</span></div>${db.online?`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un utilisateur</button><button class="btn btn-secondary" onclick="loadOnlineUsers()">↻ Actualiser</button></div><div id="usersAdminList"><div class="empty">Chargement des utilisateurs…</div></div>`:`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un collaborateur</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'Administrateur':'Collaborateur'}</td><td>${u.id!=='u-admin'?`<button class="btn btn-danger" onclick="deleteUser('${esc(u.id)}')">Supprimer</button>`:'Compte principal'}</td></tr>`).join('')}</tbody></table></div>`}</section>
