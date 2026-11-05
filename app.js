@@ -153,57 +153,43 @@ function parcelPayload(p){return `GVI INTERNATIONAL\nNom: ${p.client||''}\nNumer
 function makeQR(id,data){const el=document.getElementById(id);if(!el)return;el.innerHTML='';if(!window.QRCode){el.innerHTML='<span class="note">QR Code indisponible : vérifiez votre connexion Internet puis rechargez la page.</span>';console.error('Bibliothèque QRCode non chargée.');return;}try{new QRCode(el,{text:String(data||''),width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}catch(err){console.error('Erreur génération QR Code:',err);el.innerHTML='<span class="note">Impossible de générer le QR Code.</span>';}}
 function labelHTML(p){return `<div class="label-print"><img src="${LOGO_SRC}" class="label-logo"><div class="label-brand">GVI INTERNATIONAL</div><div class="label-id">${esc(p.id)}</div><div class="label-row"><b>Nom :</b> ${esc(p.client)}</div><div class="label-row"><b>N° :</b> ${esc(p.tel||'—')}</div><div class="label-row"><b>Provenance :</b> ${esc(p.origin||'—')}</div><div class="label-row"><b>Destination :</b> ${esc(p.destination)}</div><div class="label-row"><b>Prix :</b> ${money(p.total)}</div><div class="label-row"><b>Poids :</b> ${esc(p.weight)} kg</div><div class="label-row"><b>Statut :</b> ${esc(p.status)}</div><div class="label-qr"><div id="printQR"></div></div></div>`}
 function printLabel(id){
-  /* Impression : seul le QR code du client est imprimé (avec le nom GVI INTERNATIONAL), centré sur page blanche.
-     Une couche temporaire est ajoutée à la page ; pendant l'impression tout le reste est masqué (@media print).
-     L'application n'est ni rechargée ni modifiée : les données restent intactes. */
+  /* Impression : uniquement le QR code du client, centré sur une page blanche (avec le nom GVI INTERNATIONAL).
+     L'impression se fait dans un iframe caché : l'application n'est jamais quittée ni modifiée. */
   const raw=db.parcels.find(x=>x.id===id);if(!raw)return;
   const p=normalizeParcel(raw);
-  ['gviQrPrint','gviQrPrintStyle'].forEach(i=>{const o=document.getElementById(i);if(o)o.remove();});
-  const layer=document.createElement('div');
-  layer.id='gviQrPrint';
-  layer.innerHTML='<div class="gvi-brand">GVI INTERNATIONAL</div><div class="gvi-qr"></div>';
-  const holder=layer.querySelector('.gvi-qr');
-  document.body.appendChild(layer);
-  let ok=false,errMsg='';
-  /* 1) QR généré directement dans la couche d'impression */
+  if(!window.QRCode){alert('QR Code indisponible : vérifiez votre connexion Internet puis rechargez la page.');return;}
+  let qrSrc='';
   try{
-    if(!window.QRCode)throw new Error('Bibliothèque QRCode non chargée (vérifiez votre connexion Internet).');
-    new QRCode(holder,{text:parcelPayload(p),width:600,height:600,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-    const c=holder.querySelector('canvas'),im=holder.querySelector('img');
-    if(c){if(im)im.remove();c.style.setProperty('display','block','important');ok=true;}
-    else if(holder.querySelector('table')||(im&&im.getAttribute('src')))ok=true;
-  }catch(err){errMsg=err&&err.message?err.message:String(err);console.error('Erreur génération QR Code (impression):',err);}
-  /* 2) Secours : reprendre le QR déjà affiché sur la fiche */
-  if(!ok){
-    try{
-      const box=document.getElementById('qrFiche');
-      const c=box&&box.querySelector('canvas'),im=box&&box.querySelector('img');
-      let src='';
-      if(im&&im.getAttribute('src'))src=im.getAttribute('src');
-      else if(c)src=c.toDataURL('image/png');
-      if(src){holder.innerHTML='';const n=document.createElement('img');n.alt='QR Code';n.src=src;holder.appendChild(n);ok=true;}
-    }catch(err2){console.error('Erreur QR de secours:',err2);}
-  }
-  if(!ok){layer.remove();alert("Impossible de générer le QR Code à imprimer."+(errMsg?"\n\n"+errMsg:""));return;}
-  const st=document.createElement('style');
-  st.id='gviQrPrintStyle';
-  st.textContent='#gviQrPrint{display:none}'
+    const tmp=document.createElement('div');
+    tmp.style.cssText='position:fixed;left:-9999px;top:0;';
+    document.body.appendChild(tmp);
+    new QRCode(tmp,{text:parcelPayload(p),width:600,height:600,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+    const c=tmp.querySelector('canvas'),im=tmp.querySelector('img');
+    qrSrc=c?c.toDataURL('image/png'):(im?im.src:'');
+    document.body.removeChild(tmp);
+  }catch(err){console.error('Erreur génération QR Code (impression):',err);}
+  if(!qrSrc){alert("Impossible de générer le QR Code à imprimer.");return;}
+  const html='<!doctype html><html><head><meta charset="utf-8"><title>GVI International</title><style>'
     +'@page{margin:0}'
-    +'@media print{'
-    +'html,body{margin:0!important;padding:0!important;background:#fff!important;height:100%!important}'
-    +'body>*:not(#gviQrPrint){display:none!important}'
-    +'#gviQrPrint{display:flex!important;position:fixed;top:0;left:0;right:0;bottom:0;flex-direction:column;align-items:center;justify-content:center;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;z-index:2147483647}'
-    +'#gviQrPrint .gvi-brand{font-size:22px;font-weight:800;letter-spacing:.08em;margin-bottom:10mm;text-align:center}'
-    +'#gviQrPrint .gvi-qr{display:flex;justify-content:center;width:100%}'
-    +'#gviQrPrint .gvi-qr canvas,#gviQrPrint .gvi-qr img{display:block!important;width:100mm!important;max-width:80%!important;height:auto!important;image-rendering:pixelated}'
-    +'}';
-  document.head.appendChild(st);
-  const cleanup=()=>{window.removeEventListener('afterprint',cleanup);st.remove();layer.remove();};
-  window.addEventListener('afterprint',cleanup);
-  setTimeout(cleanup,120000);
-  const img=holder.querySelector('img');
-  const go=()=>{try{window.print();}catch(e){console.error('Erreur impression:',e);cleanup();}};
-  if(!img||img.complete)go();else img.onload=go;
+    +'html,body{margin:0;padding:0;background:#fff;height:100%;overflow:hidden}'
+    +'body{display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,Helvetica,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'.brand{font-size:22px;font-weight:800;letter-spacing:.08em;margin-bottom:10mm;text-align:center}'
+    +'img{width:100mm;max-width:80%;height:auto;display:block}'
+    +'</style></head><body><div class="brand">GVI INTERNATIONAL</div><img id="qr" alt="QR Code" src="'+qrSrc+'"></body></html>';
+  const f=document.createElement('iframe');
+  f.setAttribute('aria-hidden','true');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;';
+  document.body.appendChild(f);
+  const cleanup=()=>{try{if(f.parentNode)f.parentNode.removeChild(f)}catch(e){}};
+  try{
+    const w=f.contentWindow,d=w.document;
+    d.open();d.write(html);d.close();
+    w.onafterprint=cleanup;
+    const im=d.getElementById('qr');
+    const go=()=>{try{w.focus();w.print();}catch(e){console.error('Erreur impression:',e);cleanup();}};
+    if(im.complete)setTimeout(go,150);else im.onload=()=>setTimeout(go,150);
+    setTimeout(cleanup,120000);
+  }catch(err){console.error('Erreur impression:',err);cleanup();}
 }
 
 function admin(){if(!isAdmin())return '<div class="empty">Accès administrateur requis.</div>';return `<div class="page-head"><div><div class="eyebrow">ADMINISTRATION</div><h2>Administration</h2><p>Utilisateurs, tarifs et maintenance de la plateforme.</p></div></div><div class="two-col"><section class="card"><div class="section-head"><h3>Utilisateurs</h3><span class="mode-pill ${db.online?'online':'local'}">${db.online?'Comptes Supabase':'Comptes locaux'}</span></div>${db.online?`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un utilisateur</button><button class="btn btn-secondary" onclick="loadOnlineUsers()">↻ Actualiser</button></div><div id="usersAdminList"><div class="empty">Chargement des utilisateurs…</div></div>`:`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un collaborateur</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'Administrateur':'Collaborateur'}</td><td>${u.id!=='u-admin'?`<button class="btn btn-danger" onclick="deleteUser('${esc(u.id)}')">Supprimer</button>`:'Compte principal'}</td></tr>`).join('')}</tbody></table></div>`}</section>
