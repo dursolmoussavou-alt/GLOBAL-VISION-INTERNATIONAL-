@@ -152,7 +152,32 @@ function fiche(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return '<div 
 function parcelPayload(p){return `GVI INTERNATIONAL\nNom: ${p.client||''}\nNumero: ${p.tel||''}\nProvenance: ${p.origin||''}\nDestination: ${p.destination||''}\nPrix: ${Number(p.total||0).toFixed(2)} DH\nPoids: ${Number(p.weight||0).toFixed(2)} kg`}
 function makeQR(id,data){const el=document.getElementById(id);if(!el||!window.QRCode)return;el.innerHTML='';new QRCode(el,{text:data,width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M})}
 function labelHTML(p){return `<div class="label-print"><img src="${LOGO_SRC}" class="label-logo"><div class="label-brand">GVI INTERNATIONAL</div><div class="label-id">${esc(p.id)}</div><div class="label-row"><b>Nom :</b> ${esc(p.client)}</div><div class="label-row"><b>N° :</b> ${esc(p.tel||'—')}</div><div class="label-row"><b>Provenance :</b> ${esc(p.origin||'—')}</div><div class="label-row"><b>Destination :</b> ${esc(p.destination)}</div><div class="label-row"><b>Prix :</b> ${money(p.total)}</div><div class="label-row"><b>Poids :</b> ${esc(p.weight)} kg</div><div class="label-row"><b>Statut :</b> ${esc(p.status)}</div><div class="label-qr"><div id="printQR"></div></div></div>`}
-function printLabel(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return;const p=normalizeParcel(raw),w=window.open('','_blank','width=500,height=700');if(!w)return;w.document.write(`<html><head><title>Étiquette ${esc(p.id)}</title><style>body{margin:0;font-family:Arial}.label-print{width:90mm;padding:8mm}.label-print img{width:38mm;display:block;margin:auto}.label-brand{text-align:center;font-weight:800;margin:2mm}.label-id{font-size:22px;font-weight:900;text-align:center}.label-row{font-size:11px;margin:3px 0}.label-qr{display:flex;justify-content:center;margin:6mm 0}</style></head><body>${labelHTML(p)}<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script><script>new QRCode(document.getElementById('printQR'),{text:${JSON.stringify(parcelPayload(p))},width:220,height:220});setTimeout(()=>window.print(),500)<\/script></body></html>`);w.document.close()}
+function printLabel(id){
+ const raw=db.parcels.find(x=>x.id===id);
+ if(!raw)return;
+ const p=normalizeParcel(raw);
+ const w=window.open('','_blank','width=600,height=700');
+ if(!w)return;
+ const payload=parcelPayload(p);
+ w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QR Code GVI</title><style>
+ @page{size:auto;margin:0}
+ *{box-sizing:border-box}
+ html,body{width:100%;height:100%;margin:0;background:#fff}
+ body{font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center}
+ .print-sheet{width:100%;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#fff}
+ .brand{font-size:20px;font-weight:700;letter-spacing:1.5px;color:#111;text-align:center}
+ #printQR{width:260px;height:260px;display:flex;align-items:center;justify-content:center}
+ #printQR img,#printQR canvas{width:260px!important;height:260px!important;display:block}
+ @media print{html,body{width:100%;height:100%;} .print-sheet{min-height:100vh;}}
+ </style></head><body><main class="print-sheet"><div class="brand">GVI INTERNATIONAL</div><div id="printQR"></div></main>
+ <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script>
+ <script>
+ const qr=new QRCode(document.getElementById('printQR'),{text:${JSON.stringify(payload)},width:520,height:520,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+ window.onafterprint=()=>window.close();
+ setTimeout(()=>{window.focus();window.print();},350);
+ <\/script></body></html>`);
+ w.document.close();
+}
 
 function admin(){if(!isAdmin())return '<div class="empty">Accès administrateur requis.</div>';return `<div class="page-head"><div><div class="eyebrow">ADMINISTRATION</div><h2>Administration</h2><p>Utilisateurs, tarifs et maintenance de la plateforme.</p></div></div><div class="two-col"><section class="card"><div class="section-head"><h3>Utilisateurs</h3><span class="mode-pill ${db.online?'online':'local'}">${db.online?'Comptes Supabase':'Comptes locaux'}</span></div>${db.online?`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un utilisateur</button><button class="btn btn-secondary" onclick="loadOnlineUsers()">↻ Actualiser</button></div><div id="usersAdminList"><div class="empty">Chargement des utilisateurs…</div></div>`:`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un collaborateur</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'Administrateur':'Collaborateur'}</td><td>${u.id!=='u-admin'?`<button class="btn btn-danger" onclick="deleteUser('${esc(u.id)}')">Supprimer</button>`:'Compte principal'}</td></tr>`).join('')}</tbody></table></div>`}</section>
  <section class="card"><div class="section-head"><h3>Tarifs par destination</h3><button class="btn btn-primary" onclick="addTariff()">＋ Ajouter</button></div><div class="mini-list">${db.tariffs.map((t,i)=>`<div class="mini-item"><span><b>${esc(t.destination)}</b><br><small class="muted">${money(t.price)}/kg</small></span><button class="btn btn-danger" onclick="deleteTariff('${esc(t.id??i)}',${i})">Supprimer</button></div>`).join('')||'<div class="empty">Aucun tarif.</div>'}</div></section></div>
