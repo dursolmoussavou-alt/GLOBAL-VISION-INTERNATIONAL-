@@ -20,7 +20,7 @@ function esc(v){return String(v??"").replace(/[&<>'"]/g,m=>({"&":"&amp;","<":"&l
 function money(v){return `${Number(v||0).toFixed(2)} DH`}
 function dateFmt(v){if(!v)return "—";const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleDateString("fr-FR")}
 function toast(msg){clearTimeout(toastTimer);let el=document.getElementById("toast");if(!el){el=document.createElement("div");el.id="toast";el.className="toast";document.body.appendChild(el)}el.textContent=msg;el.style.display="block";toastTimer=setTimeout(()=>el.style.display="none",2600)}
-function badge(s){let c="";if(["Livré","Récupéré"].includes(s))c="success";else if(s==="En transit")c="blue";else if(s==="En magasin")c="warn";return `<span class="badge ${c}">${esc(s)}</span>`}
+function badge(s){s=canonicalStatus(s);let c="";if(s==="Livré")c="success";else if(s==="En transit")c="blue";return `<span class="badge ${c}">${esc(s)}</span>`}
 
 async function init(){
   if(configured()){
@@ -45,7 +45,7 @@ async function hydrateOnline(session){
       sb.from("tariffs").select("*").order("destination")
     ]);
     if(pa)throw pa;if(ta)throw ta;
-    db={online:true,parcels:parcels||[],tariffs:tariffs||[],user:{id:profile.id,name:profile.full_name||session.user.email,email:session.user.email,role:profile.role,approved:profile.approved},session:session};
+    db={online:true,parcels:(parcels||[]).map(normalizeParcel),tariffs:tariffs||[],user:{id:profile.id,name:profile.full_name||session.user.email,email:session.user.email,role:profile.role,approved:profile.approved},session:session};
     state.page="dashboard";layout();
   }catch(e){console.error(e);loginView("Impossible de charger la base en ligne.")}
 }
@@ -56,7 +56,7 @@ function layout(){
   <header class="topbar"><div class="topbar-left"><img class="logo-sm" src="${LOGO_SRC}" onerror="this.onerror=null;this.src=LOGO_FALLBACK"><div class="brand-text"><b>GVI INTERNATIONAL</b><span>Gestion & expédition de colis</span></div></div>
   <div class="topbar-right"><span class="mode-pill ${db.online?'online':'local'}">${db.online?'● EN LIGNE':'● MODE LOCAL'}</span><span class="user-pill">${esc(currentUser().name||currentUser().email)} · ${currentUser().role==='admin'?'Admin':'Collaborateur'}</span><button class="btn btn-secondary" onclick="logout()">Déconnexion</button></div></header>
   <div class="layout"><aside class="sidebar"><div class="nav-title">Menu principal</div><nav class="nav">${[
-   ["dashboard","⌂","Tableau de bord"],["parcels","▣","Gestion des colis"],["new","＋","Nouveau colis"],["admin","⚙","Administration"]
+   ["dashboard","⌂","Tableau de bord"],["search","⌕","Recherche"],["parcels","▣","Gestion des colis"],["new","＋","Nouveau colis"],["admin","⚙","Administration"]
   ].map(n=>`<button class="${state.page===n[0]?"active":""}" onclick="go('${n[0]}')"><span>${n[1]}</span>${n[2]}</button>`).join("")}</nav><div class="sidebar-foot">${esc(CFG.COMPANY?.hours||"09H–18H · Lundi à vendredi")}</div></aside>
   <main class="content" id="main"></main></div></div><div id="toast" class="toast" style="display:none"></div>`;
  renderPage();
@@ -73,13 +73,13 @@ async function login(e){e.preventDefault();const email=document.getElementById("
 }
 async function logout(){if(db.online){await sb.auth.signOut({scope:"local"});return}db.session=null;saveLocal();state={page:"dashboard",search:"",selected:null,editing:null,filters:{}};layout()}
 function go(p){if(p==="admin"&&!isAdmin()){toast("Accès administrateur requis.");return}state.page=p;state.selected=null;state.editing=null;renderPage();window.scrollTo({top:0,behavior:"smooth"})}
-function renderPage(){const el=document.getElementById("main");if(!el)return;if(state.page==="dashboard")el.innerHTML=dashboard();else if(state.page==="parcels")el.innerHTML=parcels();else if(state.page==="new")el.innerHTML=parcelForm();else if(state.page==="fiche")el.innerHTML=fiche(state.selected);else if(state.page==="admin"){el.innerHTML=admin();if(db.online&&isAdmin())loadOnlineUsers()}else el.innerHTML=dashboard()}
+function renderPage(){const el=document.getElementById("main");if(!el)return;if(state.page==="dashboard")el.innerHTML=dashboard();else if(state.page==="parcels")el.innerHTML=parcels();else if(state.page==="search")el.innerHTML=parcels(true);else if(state.page==="new")el.innerHTML=parcelForm();else if(state.page==="fiche")el.innerHTML=fiche(state.selected);else if(state.page==="admin"){el.innerHTML=admin();if(db.online&&isAdmin())loadOnlineUsers()}else el.innerHTML=dashboard()}
 
 function dashboard(){
- const total=db.parcels.length,active=db.parcels.filter(p=>!["Livré","Récupéré"].includes(p.status)).length,delivered=db.parcels.filter(p=>["Livré","Récupéré"].includes(p.status)).length,revenue=db.parcels.reduce((s,p)=>s+Number(p.total||0),0);
+ const total=db.parcels.length,active=db.parcels.filter(p=>canonicalStatus(p.status)!=="Livré").length,delivered=db.parcels.filter(p=>canonicalStatus(p.status)==="Livré").length,revenue=db.parcels.reduce((s,p)=>s+Number(p.total||0),0);
  const recent=[...db.parcels].sort((a,b)=>new Date(b.created_at||b.createdAt)-new Date(a.created_at||a.createdAt)).slice(0,7);
  return `<div class="page-head"><div><div class="eyebrow">GVI INTERNATIONAL</div><h2>Tableau de bord</h2><p>Pilotage des opérations colis, en temps réel${db.online?' depuis la base en ligne.':'.'}</p></div><div class="actions"><button class="btn btn-primary" onclick="go('new')">＋ Nouveau colis</button></div></div>
- <div class="grid-cards"><div class="stat"><div class="label">Total colis</div><div class="value">${total}</div><small>enregistrés</small></div><div class="stat"><div class="label">En cours</div><div class="value">${active}</div><small>hors terminés</small></div><div class="stat"><div class="label">Livrés / récupérés</div><div class="value">${delivered}</div><small>terminés</small></div><div class="stat"><div class="label">Montant total</div><div class="value money-value">${money(revenue)}</div><small>prix des colis</small></div></div>
+ <div class="grid-cards"><div class="stat"><div class="label">Total colis</div><div class="value">${total}</div><small>enregistrés</small></div><div class="stat"><div class="label">En cours</div><div class="value">${active}</div><small>hors terminés</small></div><div class="stat"><div class="label">Livrés</div><div class="value">${delivered}</div><small>terminés</small></div><div class="stat"><div class="label">Montant total</div><div class="value money-value">${money(revenue)}</div><small>prix des colis</small></div></div>
  <div class="two-col"><section class="card"><div class="section-head"><h3>Derniers colis</h3><button class="link-btn" onclick="go('parcels')">Voir tout →</button></div>${recent.length?`<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Client</th><th>Destination</th><th>Date</th><th>Statut</th></tr></thead><tbody>${recent.map(p=>`<tr onclick="openParcel('${esc(p.id)}')" style="cursor:pointer"><td class="parcel-id">${esc(p.id)}</td><td>${esc(p.client)}</td><td>${esc(p.destination)}</td><td>${dateFmt(p.date)}</td><td>${badge(p.status)}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty">Aucun colis. Créez votre premier colis.</div>`}</section>
  <section class="card"><div class="section-head"><h3>Répartition des statuts</h3></div><div class="mini-list">${STATUSES.map(s=>{const n=db.parcels.filter(p=>p.status===s).length;return `<div class="mini-item"><span>${esc(s)}</span><b>${n}</b></div>`}).join("")}</div></section></div>
  <section class="contact-card"><div><div class="eyebrow">CONTACT GVI</div><h3>Nous contacter</h3><p>${esc(CFG.COMPANY?.hours||"")}</p><div class="phones">${(CFG.COMPANY?.phones||[]).map(x=>`<a href="tel:${x.replace(/\s/g,'')}">${esc(x)}</a>`).join("")}</div></div><a class="tiktok-btn" href="${esc(CFG.TIKTOK_URL||'https://www.tiktok.com/') }" target="_blank" rel="noopener">♪ TikTok</a></section>`;
@@ -97,9 +97,9 @@ function filteredParcels(){
    return true;
  }).sort((a,b)=>new Date(b.created_at||b.createdAt)-new Date(a.created_at||a.createdAt));
 }
-function parcels(){
+function parcels(searchOnly=false){
  const rows=filteredParcels(), destinations=[...new Set(db.parcels.map(p=>p.destination).filter(Boolean))].sort();
- return `<div class="page-head"><div><div class="eyebrow">EXPÉDITION</div><h2>Gestion des colis</h2><p>Recherche avancée, modification, suppression et suivi.</p></div><div class="actions"><button class="btn btn-primary" onclick="go('new')">＋ Nouveau colis</button>${currentUser()?.role==='admin'?'<button class="btn btn-secondary" onclick="exportCSV()">Exporter CSV</button>':''}</div></div>
+ return `<div class="page-head"><div><div class="eyebrow">EXPÉDITION</div><h2>${searchOnly?"Recherche des colis":"Gestion des colis"}</h2><p>${searchOnly?"Recherchez un colis par son identifiant, son client, sa provenance ou sa destination.":"Recherche avancée, modification, suppression et suivi."}</p></div><div class="actions"><button class="btn btn-primary" onclick="go('new')">＋ Nouveau colis</button>${currentUser()?.role==='admin'?'<button class="btn btn-secondary" onclick="exportCSV()">Exporter CSV</button>':''}</div></div>
  <section class="card filter-card"><form onsubmit="applyFilters(event)"><div class="toolbar"><div class="search"><input name="q" value="${esc(state.search)}" placeholder="ID, client, téléphone, provenance, destination…"></div><button class="btn btn-primary">Rechercher</button><button type="button" class="btn btn-secondary" onclick="clearFilters()">Réinitialiser</button></div><div class="advanced-filters"><div class="field"><label>Statut</label><select name="status"><option value="">Tous</option>${STATUSES.map(s=>`<option ${state.filters.status===s?'selected':''}>${esc(s)}</option>`).join("")}</select></div><div class="field"><label>Destination</label><select name="destination"><option value="">Toutes</option>${destinations.map(d=>`<option ${state.filters.destination===d?'selected':''}>${esc(d)}</option>`).join("")}</select></div><div class="field"><label>Date début</label><input type="date" name="from" value="${esc(state.filters.from||"")}"></div><div class="field"><label>Date fin</label><input type="date" name="to" value="${esc(state.filters.to||"")}"></div><div class="field"><label>Poids min. (kg)</label><input type="number" step="0.01" name="minWeight" value="${esc(state.filters.minWeight||"")}"></div><div class="field"><label>Poids max. (kg)</label><input type="number" step="0.01" name="maxWeight" value="${esc(state.filters.maxWeight||"")}"></div></div></form></section>
  <section class="card"><div class="result-bar"><b>${rows.length}</b> colis trouvé(s)</div>${rows.length?`<div class="table-wrap"><table class="table"><thead><tr><th>ID</th><th>Client</th><th>Destinataire</th><th>Provenance</th><th>Destination</th><th>Poids</th><th>Total</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${rows.map(p=>`<tr><td class="parcel-id">${esc(p.id)}</td><td>${esc(p.client)}</td><td>${esc(p.destinataire||"—")}</td><td>${esc(p.origin||"—")}</td><td>${esc(p.destination)}</td><td>${Number(p.weight||0).toFixed(2)} kg</td><td>${money(p.total)}</td><td>${badge(p.status)}</td><td class="row-actions"><button class="btn btn-secondary" onclick="openParcel('${esc(p.id)}')">Fiche</button><button class="btn btn-secondary" onclick="editParcel('${esc(p.id)}')">Modifier</button>${isAdmin()?`<button class="btn btn-danger" onclick="deleteParcel('${esc(p.id)}')">Supprimer</button>`:""}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty">Aucun colis ne correspond aux critères.</div>`}</section>`;
 }
@@ -108,9 +108,13 @@ function clearFilters(){state.search="";state.filters={status:"",destination:"",
 
 function parcelForm(){
  const p=state.editing?db.parcels.find(x=>x.id===state.editing):null,t=db.tariffs;
+ // Les destinations saisies dans Administration alimentent les deux listes déroulantes.
+ // On ajoute aussi les valeurs déjà utilisées pour ne pas perdre les anciennes fiches.
+ const destinationOptions=[...new Set([...t.map(x=>x.destination),...db.parcels.map(x=>x.destination),p?.destination].filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'fr'));
+ const provenanceOptions=[...new Set([...t.map(x=>x.destination),...db.parcels.map(x=>x.origin),p?.origin].filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'fr'));
  return `<div class="page-head"><div><div class="eyebrow">COLIS</div><h2>${p?'Modifier le colis':'Nouveau colis'}</h2><p>${p?'Mettez à jour les informations sans recréer le colis.':'Enregistrez un colis et générez automatiquement son identifiant et son QR Code.'}</p></div></div><form class="card" onsubmit="saveParcel(event)"><div class="form-grid">
- <div class="field"><label>Nom et prénom client *</label><input name="client" value="${esc(p?.client)}" required></div><div class="field"><label>Téléphone client</label><input name="tel" value="${esc(p?.tel)}"></div><div class="field"><label>Date de réception *</label><input type="date" name="date" value="${p?.date||new Date().toISOString().slice(0,10)}" required></div><div class="field"><label>Provenance</label><input name="origin" value="${esc(p?.origin)}" placeholder="Ville / pays"></div>
- <div class="field"><label>Destination *</label><input name="destination" list="destinations" value="${esc(p?.destination)}" required oninput="autoPrice(this.value)"><datalist id="destinations">${t.map(x=>`<option value="${esc(x.destination)}">${money(x.price)}/kg</option>`).join("")}</datalist></div><div class="field"><label>Destinataire</label><input name="destinataire" value="${esc(p?.destinataire)}"></div><div class="field"><label>Téléphone destinataire</label><input name="telDest" value="${esc(p?.tel_dest??p?.telDest)}"></div><div class="field"><label>Quantité</label><input type="number" min="1" name="qty" value="${p?.qty||1}"></div>
+ <div class="field"><label>Nom et prénom client *</label><input name="client" value="${esc(p?.client)}" required></div><div class="field"><label>Téléphone client</label><input name="tel" value="${esc(p?.tel)}"></div><div class="field"><label>Date de réception *</label><input type="date" name="date" value="${p?.date||new Date().toISOString().slice(0,10)}" required></div><div class="field"><label>Provenance</label><select name="origin"><option value="">Sélectionner une provenance</option>${provenanceOptions.map(v=>`<option value="${esc(v)}" ${p?.origin===v?'selected':''}>${esc(v)}</option>`).join('')}</select></div>
+ <div class="field"><label>Destination *</label><select name="destination" required onchange="autoPrice(this.value)"><option value="">Sélectionner une destination</option>${destinationOptions.map(v=>`<option value="${esc(v)}" ${p?.destination===v?'selected':''}>${esc(v)}${t.find(x=>String(x.destination).toLowerCase()===String(v).toLowerCase())?` — ${money(t.find(x=>String(x.destination).toLowerCase()===String(v).toLowerCase()).price)}/kg`:''}</option>`).join('')}</select></div><div class="field"><label>Destinataire</label><input name="destinataire" value="${esc(p?.destinataire)}"></div><div class="field"><label>Téléphone destinataire</label><input name="telDest" value="${esc(p?.tel_dest??p?.telDest)}"></div><div class="field"><label>Quantité</label><input type="number" min="1" name="qty" value="${p?.qty||1}"></div>
  <div class="field"><label>Type colis</label><input name="type" value="${esc(p?.type)}" placeholder="Carton, sac, valise…"></div><div class="field"><label>Poids (kg) *</label><input id="weight" type="number" step="0.01" min="0" name="weight" value="${p?.weight||''}" required oninput="calcTotal()"></div><div class="field"><label>Prix unitaire (DH/kg) *</label><input id="price" type="number" step="0.01" min="0" name="price" value="${p?.price||''}" required oninput="calcTotal()"></div><div class="field"><label>Prix total (DH)</label><input id="total" name="total" value="${p?.total||0}" readonly></div><div class="field"><label>Valeur déclarée (DH)</label><input type="number" step="0.01" min="0" name="declared" value="${p?.declared||0}"></div><div class="field"><label>Statut</label><select name="status">${STATUSES.map(s=>`<option ${p?.status===s||(!p&&s==='Réceptionné')?'selected':''}>${esc(s)}</option>`).join("")}</select></div><div class="field full"><label>Notes</label><textarea name="notes" rows="3" placeholder="Informations complémentaires">${esc(p?.notes)}</textarea></div>
  </div><div class="actions" style="margin-top:20px"><button type="button" class="btn btn-secondary" onclick="go('parcels')">Annuler</button><button class="btn btn-primary">${p?'Enregistrer les modifications':'Enregistrer le colis'}</button></div></form>`;
 }
@@ -133,7 +137,7 @@ async function saveParcel(e){e.preventDefault();const f=Object.fromEntries(new F
   }
  }catch(err){console.error(err);toast('Erreur lors de l’enregistrement du colis. Vérifiez la connexion et les droits.')} finally {state.editing=null;}
 }
-function replaceParcel(data){const i=db.parcels.findIndex(p=>p.id===data.id);if(i>=0)db.parcels[i]=data;else db.parcels.unshift(data)}
+function replaceParcel(data){data=normalizeParcel(data);const i=db.parcels.findIndex(p=>p.id===data.id);if(i>=0)db.parcels[i]=data;else db.parcels.unshift(data)}
 function openParcel(id){state.selected=id;state.page='fiche';renderPage()}
 function editParcel(id){const p=db.parcels.find(x=>x.id===id);if(!p)return;if(!isAdmin()&&db.online&&p.created_by!==currentUser().id){toast('Vous pouvez modifier uniquement vos propres colis.');return}state.editing=id;state.page='new';renderPage()}
 async function deleteParcel(id){if(!isAdmin())return;if(!confirm('Supprimer définitivement ce colis ? Cette action est irréversible.'))return;try{if(db.online){const {error}=await sb.from('parcels').delete().eq('id',id);if(error)throw error}db.parcels=db.parcels.filter(p=>p.id!==id);saveLocal();toast('Colis supprimé.');go('parcels')}catch(e){console.error(e);toast('Suppression impossible.')}}
@@ -147,8 +151,57 @@ function fiche(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return '<div 
 }
 function parcelPayload(p){return `GVI INTERNATIONAL\nNom: ${p.client||''}\nNumero: ${p.tel||''}\nProvenance: ${p.origin||''}\nDestination: ${p.destination||''}\nPrix: ${Number(p.total||0).toFixed(2)} DH\nPoids: ${Number(p.weight||0).toFixed(2)} kg`}
 function makeQR(id,data){const el=document.getElementById(id);if(!el||!window.QRCode)return;el.innerHTML='';new QRCode(el,{text:data,width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M})}
-function labelHTML(p){return `<div class="label-print"><img src="${LOGO_SRC}" class="label-logo"><div class="label-brand">GVI INTERNATIONAL</div><div class="label-id">${esc(p.id)}</div><div class="label-row"><b>Nom :</b> ${esc(p.client)}</div><div class="label-row"><b>N° :</b> ${esc(p.tel||'—')}</div><div class="label-row"><b>Provenance :</b> ${esc(p.origin||'—')}</div><div class="label-row"><b>Destination :</b> ${esc(p.destination)}</div><div class="label-row"><b>Prix :</b> ${money(p.total)}</div><div class="label-row"><b>Poids :</b> ${esc(p.weight)} kg</div><div class="label-row"><b>Statut :</b> ${esc(p.status)}</div><div class="label-qr"><div id="printQR"></div></div></div>`}
-function printLabel(id){const raw=db.parcels.find(x=>x.id===id);if(!raw)return;const p=normalizeParcel(raw),w=window.open('','_blank','width=500,height=700');if(!w)return;w.document.write(`<html><head><title>Étiquette ${esc(p.id)}</title><style>body{margin:0;font-family:Arial}.label-print{width:90mm;padding:8mm}.label-print img{width:38mm;display:block;margin:auto}.label-brand{text-align:center;font-weight:800;margin:2mm}.label-id{font-size:22px;font-weight:900;text-align:center}.label-row{font-size:11px;margin:3px 0}.label-qr{display:flex;justify-content:center;margin:6mm 0}</style></head><body>${labelHTML(p)}<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"><\/script><script>new QRCode(document.getElementById('printQR'),{text:${JSON.stringify(parcelPayload(p))},width:220,height:220});setTimeout(()=>window.print(),500)<\/script></body></html>`);w.document.close()}
+function labelHTML(p, qrDataUrl){
+ return `<div class="label-print">
+   <img src="${LOGO_SRC}" class="label-logo" alt="GVI">
+   <div class="label-brand">GVI INTERNATIONAL</div>
+   <div class="label-qr"><img class="label-qr-image" src="${qrDataUrl}" alt="QR Code client"></div>
+   <div class="label-hint">Scanner le QR Code pour consulter les informations du client</div>
+ </div>`;
+}
+function printLabel(id){
+ const raw=db.parcels.find(x=>x.id===id);
+ if(!raw)return;
+ const p=normalizeParcel(raw);
+ if(typeof window.QRCode!=='function'){
+   toast('QR Code indisponible. Vérifiez votre connexion Internet puis réessayez.');
+   return;
+ }
+ // Générer le QR dans la page principale, où la bibliothèque est déjà chargée.
+ const holder=document.createElement('div');
+ holder.style.cssText='position:fixed;left:-10000px;top:-10000px;width:220px;height:220px';
+ document.body.appendChild(holder);
+ try{
+   new QRCode(holder,{text:parcelPayload(p),width:220,height:220,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+   const canvas=holder.querySelector('canvas');
+   const image=holder.querySelector('img');
+   const qrDataUrl=canvas?canvas.toDataURL('image/png'):(image?image.src:'');
+   if(!qrDataUrl){toast('Le QR Code n’a pas pu être généré. Réessayez.');return;}
+   const w=window.open('','_blank','width=500,height=700');
+   if(!w){toast('Autorisez les fenêtres pop-up pour imprimer l’étiquette.');return;}
+   w.document.open();
+   w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Étiquette GVI</title>
+   <style>
+   *{box-sizing:border-box}body{margin:0;background:#fff;font-family:Arial,sans-serif;color:#111}
+   .label-print{width:90mm;min-height:90mm;padding:7mm;margin:0 auto;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
+   .label-logo{width:38mm;height:auto;display:block;margin:0 auto 4mm}
+   .label-brand{font-size:16px;font-weight:800;letter-spacing:.5px;margin-bottom:5mm}
+   .label-qr{display:flex;justify-content:center;align-items:center;width:100%;margin:0}
+   .label-qr-image{width:48mm;height:48mm;display:block;image-rendering:pixelated}
+   .label-hint{font-size:9px;margin-top:4mm;max-width:70mm;line-height:1.4}
+   @page{size:100mm 100mm;margin:0}
+   @media print{body{width:100mm}.label-print{width:100mm;min-height:100mm}}
+   </style></head><body>${labelHTML(p,qrDataUrl)}
+   <script>window.onload=()=>{const q=document.querySelector('.label-qr-image');if(q.complete){setTimeout(()=>window.print(),250)}else{q.onload=()=>setTimeout(()=>window.print(),250)}};<\/script>
+   </body></html>`);
+   w.document.close();
+ }catch(err){
+   console.error('Erreur génération QR',err);
+   toast('Erreur lors de la génération du QR Code.');
+ }finally{
+   setTimeout(()=>holder.remove(),1000);
+ }
+}
 
 function admin(){if(!isAdmin())return '<div class="empty">Accès administrateur requis.</div>';return `<div class="page-head"><div><div class="eyebrow">ADMINISTRATION</div><h2>Administration</h2><p>Utilisateurs, tarifs et maintenance de la plateforme.</p></div></div><div class="two-col"><section class="card"><div class="section-head"><h3>Utilisateurs</h3><span class="mode-pill ${db.online?'online':'local'}">${db.online?'Comptes Supabase':'Comptes locaux'}</span></div>${db.online?`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un utilisateur</button><button class="btn btn-secondary" onclick="loadOnlineUsers()">↻ Actualiser</button></div><div id="usersAdminList"><div class="empty">Chargement des utilisateurs…</div></div>`:`<div class="actions" style="margin-bottom:15px"><button class="btn btn-primary" onclick="openUserModal()">＋ Ajouter un collaborateur</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>${db.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'Administrateur':'Collaborateur'}</td><td>${u.id!=='u-admin'?`<button class="btn btn-danger" onclick="deleteUser('${esc(u.id)}')">Supprimer</button>`:'Compte principal'}</td></tr>`).join('')}</tbody></table></div>`}</section>
  <section class="card"><div class="section-head"><h3>Tarifs par destination</h3><button class="btn btn-primary" onclick="addTariff()">＋ Ajouter</button></div><div class="mini-list">${db.tariffs.map((t,i)=>`<div class="mini-item"><span><b>${esc(t.destination)}</b><br><small class="muted">${money(t.price)}/kg</small></span><button class="btn btn-danger" onclick="deleteTariff('${esc(t.id??i)}',${i})">Supprimer</button></div>`).join('')||'<div class="empty">Aucun tarif.</div>'}</div></section></div>
