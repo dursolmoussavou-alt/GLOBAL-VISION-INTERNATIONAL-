@@ -158,7 +158,7 @@ function labelHTML(p){
       <div class="label-id">
         ${esc(p.id)}
       </div>
-
+      
       <div class="label-instruction">
         Scannez le QR Code pour consulter
         les informations de l'expédition.
