@@ -1,0 +1,6 @@
+CORRECTION ETIQUETTE GVI INTERNATIONAL
+
+- L'etiquette imprimee ne montre plus les donnees personnelles ou logistiques (client, telephone, provenance, destination, prix, poids, statut, etc.).
+- L'etiquette conserve le logo, le nom GVI INTERNATIONAL, l'identifiant du colis et le QR Code.
+- Le QR Code encode les informations de l'expedition : client et telephone, date de reception, provenance, destination, destinataire et telephone, quantite, type, poids, prix unitaire et total, valeur declaree, statut et notes.
+- Le QR Code s'affiche en texte lisible lors du scan avec l'appareil photo ou une application de lecture QR.
