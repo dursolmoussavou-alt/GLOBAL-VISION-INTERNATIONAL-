@@ -1,8 +1,11 @@
-CORRECTION DU QR CODE GVI
+MODIFICATION DE L'ETIQUETTE QR GVI INTERNATIONAL
 
-- Correction de l'affichage du QR Code sur la fiche colis : la génération est maintenant déclenchée après l'insertion du contenu dans la page.
-- Suppression du script intégré à la fiche qui ne s'exécutait pas avec innerHTML.
-- Le QR Code conserve les informations essentielles : nom, téléphone, provenance, destination, prix total et poids.
-- Le QR Code de l'étiquette imprimée utilise le même contenu.
+- Les informations du colis ne sont plus imprimées en clair sur l'étiquette.
+- L'étiquette conserve uniquement le logo, le nom GVI INTERNATIONAL, l'identifiant du colis et le QR Code.
+- Un message invite à scanner le QR Code pour consulter les informations.
+- Le QR Code contient les informations détaillées : client, téléphones, date, provenance, destination, destinataire, quantité, type, poids, prix unitaire, prix total, valeur déclarée et statut.
+- La fiche colis dans l'application conserve ses informations et son QR Code.
 
-Remplacement : téléversez le contenu du dossier GLOBAL-VISION-INTERNATIONAL--main dans votre dépôt GitHub en remplaçant les fichiers existants, puis validez les modifications.
+IMPORTANT : toute personne qui scanne le QR Code peut lire les informations qu'il contient. Le QR Code ne constitue pas un contrôle d'accès ni un chiffrement.
+
+Déploiement : remplacer les fichiers du dépôt par le contenu de ce dossier, puis publier la nouvelle version.
