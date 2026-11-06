@@ -7,6 +7,9 @@ Cette version part de la V1.2 et conserve son interface, son QR Code simplifié 
 ### Nouvelles fonctions
 - Modification des colis
 - Suppression des colis réservée à l'administrateur
+- Onglet indépendant « Recherche » avec recherche par identifiant, client, téléphone, provenance et destination
+- Résultats de recherche avec colonne « Provenance »
+- Statuts simplifiés à trois choix : Réceptionné, En transit et Livré (anciens statuts convertis à l’affichage)
 - Recherche avancée : texte, statut, destination, dates, poids min/max
 - Fiche colis professionnelle
 - Changement de statut avec contrôle des droits
@@ -25,8 +28,9 @@ Cette version part de la V1.2 et conserve son interface, son QR Code simplifié 
 
 1. Créez un projet Supabase.
 2. Ouvrez **SQL Editor** et exécutez tout le fichier `schema.sql`.
-3. Dans Supabase > Authentication, créez le premier compte administrateur.
-4. Copiez son UUID puis exécutez dans SQL Editor :
+3. Si votre base Supabase contient déjà des colis, exécutez aussi `MIGRATION-STATUTS.sql` pour convertir les anciens statuts enregistrés. La colonne `origin` (provenance) existe déjà dans le schéma.
+4. Dans Supabase > Authentication, créez le premier compte administrateur.
+5. Copiez son UUID puis exécutez dans SQL Editor :
 
 ```sql
 update public.profiles
@@ -34,7 +38,7 @@ set role = 'admin', approved = true
 where id = 'UUID-DU-COMPTE';
 ```
 
-5. Ouvrez `config.js` et renseignez :
+6. Ouvrez `config.js` et renseignez :
 
 ```js
 window.GVI_CONFIG = {
@@ -45,7 +49,7 @@ window.GVI_CONFIG = {
 };
 ```
 
-6. Envoyez tous les fichiers du dossier sur GitHub Pages / Netlify.
+7. Envoyez tous les fichiers du dossier sur GitHub Pages / Netlify.
 
 ### Sécurité
 La clé utilisée côté navigateur doit être la clé publique/publishable/anon de Supabase, **jamais** une `service_role` key. Les permissions de lecture/écriture/suppression sont protégées par les politiques Row Level Security du fichier `schema.sql`.
