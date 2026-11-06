@@ -12,7 +12,7 @@ let toastTimer;
 
 function configured(){ return !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && window.supabase?.createClient); }
 function seed(){return {users:[{id:"u-admin",name:"Administrateur GVI",email:"admin@gvi-international.ma",role:"admin",approved:true,password:"admin123"}],parcels:[],tariffs:[...DEFAULT_TARIFFS],session:null,online:false};}
-function localLoad(){try{const x=JSON.parse(localStorage.getItem(KEY));return x&&x.users&&x.parcels?x:seed()}catch{return seed()}}
+function localLoad(){try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&x.users&&x.parcels){x.parcels=x.parcels.map(p=>({...p,status:canonicalStatus(p.status)}));return x}return seed()}catch{return seed()}}
 function saveLocal(){if(!db?.online)localStorage.setItem(KEY,JSON.stringify(db))}
 function currentUser(){return db?.user||db?.users?.find(u=>u.id===db.session)||null}
 function isAdmin(){return currentUser()?.role==="admin"}
@@ -45,7 +45,7 @@ async function hydrateOnline(session){
       sb.from("tariffs").select("*").order("destination")
     ]);
     if(pa)throw pa;if(ta)throw ta;
-    db={online:true,parcels:parcels||[],tariffs:tariffs||[],user:{id:profile.id,name:profile.full_name||session.user.email,email:session.user.email,role:profile.role,approved:profile.approved},session:session};
+    db={online:true,parcels:(parcels||[]).map(normalizeParcel),tariffs:tariffs||[],user:{id:profile.id,name:profile.full_name||session.user.email,email:session.user.email,role:profile.role,approved:profile.approved},session:session};
     state.page="dashboard";layout();
   }catch(e){console.error(e);loginView("Impossible de charger la base en ligne.")}
 }
@@ -56,7 +56,7 @@ function layout(){
   <header class="topbar"><div class="topbar-left"><img class="logo-sm" src="${LOGO_SRC}" onerror="this.onerror=null;this.src=LOGO_FALLBACK"><div class="brand-text"><b>GVI INTERNATIONAL</b><span>Gestion & expédition de colis</span></div></div>
   <div class="topbar-right"><span class="mode-pill ${db.online?'online':'local'}">${db.online?'● EN LIGNE':'● MODE LOCAL'}</span><span class="user-pill">${esc(currentUser().name||currentUser().email)} · ${currentUser().role==='admin'?'Admin':'Collaborateur'}</span><button class="btn btn-secondary" onclick="logout()">Déconnexion</button></div></header>
   <div class="layout"><aside class="sidebar"><div class="nav-title">Menu principal</div><nav class="nav">${[
-   ["dashboard","⌂","Tableau de bord"],["parcels","▣","Gestion des colis"],["new","＋","Nouveau colis"],["admin","⚙","Administration"]
+   ["dashboard","⌂","Tableau de bord"],["search","⌕","Recherche"],["parcels","▣","Gestion des colis"],["new","＋","Nouveau colis"],["admin","⚙","Administration"]
   ].map(n=>`<button class="${state.page===n[0]?"active":""}" onclick="go('${n[0]}')"><span>${n[1]}</span>${n[2]}</button>`).join("")}</nav><div class="sidebar-foot">${esc(CFG.COMPANY?.hours||"09H–18H · Lundi à vendredi")}</div></aside>
   <main class="content" id="main"></main></div></div><div id="toast" class="toast" style="display:none"></div>`;
  renderPage();
@@ -73,7 +73,7 @@ async function login(e){e.preventDefault();const email=document.getElementById("
 }
 async function logout(){if(db.online){await sb.auth.signOut({scope:"local"});return}db.session=null;saveLocal();state={page:"dashboard",search:"",selected:null,editing:null,filters:{}};layout()}
 function go(p){if(p==="admin"&&!isAdmin()){toast("Accès administrateur requis.");return}state.page=p;state.selected=null;state.editing=null;renderPage();window.scrollTo({top:0,behavior:"smooth"})}
-function renderPage(){const el=document.getElementById("main");if(!el)return;if(state.page==="dashboard")el.innerHTML=dashboard();else if(state.page==="parcels")el.innerHTML=parcels();else if(state.page==="new")el.innerHTML=parcelForm();else if(state.page==="fiche")el.innerHTML=fiche(state.selected);else if(state.page==="admin"){el.innerHTML=admin();if(db.online&&isAdmin())loadOnlineUsers()}else el.innerHTML=dashboard()}
+function renderPage(){const el=document.getElementById("main");if(!el)return;if(state.page==="dashboard")el.innerHTML=dashboard();else if(state.page==="parcels")el.innerHTML=parcels();else if(state.page==="search")el.innerHTML=parcels(true);else if(state.page==="new")el.innerHTML=parcelForm();else if(state.page==="fiche"){el.innerHTML=fiche(state.selected);const raw=db.parcels.find(x=>x.id===state.selected);if(raw){const p=normalizeParcel(raw);makeQR("qrFiche",parcelPayload(p));}}else if(state.page==="admin"){el.innerHTML=admin();if(db.online&&isAdmin())loadOnlineUsers()}else el.innerHTML=dashboard()}
 
 function dashboard(){
  const total=db.parcels.length,active=db.parcels.filter(p=>canonicalStatus(p.status)!=="Livré").length,delivered=db.parcels.filter(p=>canonicalStatus(p.status)==="Livré").length,revenue=db.parcels.reduce((s,p)=>s+Number(p.total||0),0);
